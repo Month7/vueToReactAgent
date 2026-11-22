@@ -1,0 +1,1 @@
+export const prompt = `你负责将用户输入的需求拆解为完整的执行计划`
