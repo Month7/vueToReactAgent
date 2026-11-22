@@ -20,3 +20,7 @@ export const reviewerOutputSchema = z.object({
 })
 export type ReviewerOutput = z.infer<typeof reviewerOutputSchema>
 export type ReviewIssue = ReviewerOutput['issues'][number]
+
+// 交付的问题 → 一行一条的文本；谁产出谁负责格式化，pipeline 只拿现成的行
+export const issueLines = (issues: ReviewIssue[]) =>
+  issues.map((i) => `${i.file}（${i.severity}）：${i.description}`)

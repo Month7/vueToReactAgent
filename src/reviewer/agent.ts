@@ -2,9 +2,10 @@ import { accessTokenFromEnv, query } from '@qoder-ai/qoder-agent-sdk';
 import { prompt } from './prompt';
 import { log } from '../log';
 import type { WriterOutput } from '../writer';
+import type { AgentChunk } from '../utils/stream';
 
 // 审查型 agent：读 Vue 源与 React 产物对照，判断翻译语义是否等价；只读不写
-export const reviewerAgent = async function* (userInput: string, writerOutput: WriterOutput) {
+export const reviewerAgent = async function* (userInput: string, writerOutput: WriterOutput): AsyncGenerator<AgentChunk> {
   const stream = query({
     prompt: prompt(userInput, writerOutput),
     options: {

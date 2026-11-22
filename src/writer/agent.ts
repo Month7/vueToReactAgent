@@ -1,10 +1,10 @@
 import { accessTokenFromEnv, query } from '@qoder-ai/qoder-agent-sdk';
 import { prompt } from './prompt';
 import { log } from '../log';
-
+import type { AgentChunk } from '../utils/stream';
 
 // 执行型 agent，但对外直播过程：每个工具调用 yield 一条事件，收尾 yield 交付原文
-export const writerAgent = async function* (userInput: string, feedback = '') {
+export const writerAgent = async function* (userInput: string, feedback = ''): AsyncGenerator<AgentChunk> {
   const stream = query({
     prompt: prompt(userInput, feedback),
     options: {
