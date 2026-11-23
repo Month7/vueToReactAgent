@@ -1,13 +1,9 @@
-// tasks 非空 = 带着计划干活：清单来自 planner（首轮）或磁盘上未勾完的项（续做）；feedback 非空 = 回炉轮；
-// tasksPath 是当前变更的 tasks.md（打勾目标），由 pipeline 传入
-export const prompt = (userInput: string, feedback = '', tasks: string[] = [], tasksPath = '') => {
+// 首轮消息：角色设定+规则+任务清单；tasksPath 是当前变更的 tasks.md（打勾目标），由 pipeline 传入
+// 回炉消息是另一条（feedbackMessage）：流式会话里追加的用户消息，不拼在这里
+export const prompt = (userInput: string, tasks: string[] = [], tasksPath = '') => {
   let tasksBlock = ''
   if (tasks.length > 0) {
     tasksBlock = `\n\n本次任务清单（完成一项后用 Edit 把 ${tasksPath} 里对应项的 [ ] 改成 [x]）：\n${tasks.map((t) => `- ${t}`).join('\n')}`
-  }
-  let retryBlock = ''
-  if (feedback) {
-    retryBlock = `\n\n上一轮交付被检查出以下问题，请修复它们（符合要求的部分不要动）：\n${feedback}`
   }
   return `你是代码迁移工程师，负责把 Vue 组件库迁移为一个新的 React + TypeScript 组件库。
 
@@ -26,5 +22,13 @@ export const prompt = (userInput: string, feedback = '', tasks: string[] = [], t
 
 files 必须覆盖这次动过的每一个文件，每个文件一条记录。
 
-本次用户需求：${userInput}${tasksBlock}${retryBlock}`
+本次用户需求：${userInput}${tasksBlock}`
+}
+
+// 回炉消息：同一会话里追加的一条用户消息——writer 记得自己上轮做了什么，只需告诉它哪里不合格
+export const feedbackMessage = (problems: string) => {
+  return `上一轮交付未通过验收，问题如下：
+${problems}
+
+请修复这些问题（符合要求的部分不要动），完成后按既定 JSON 格式重新交付。`
 }
