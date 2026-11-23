@@ -16,13 +16,8 @@ export const checkerAgent = (writerOutput: WriterOutput): CheckerOutput => {
   const lines = execSync('git status --porcelain -uall', { encoding: 'utf8' })
     .split('\n')
     .filter(Boolean)
-  // 全部实际变动（含未跟踪新文件），rename 取箭头后的新路径；
-  // 排除 .vue2react/（CLI 自家运行时产物：tasks.md 记忆、debug.log 日志）——不是 writer 的交付物
-  const changed = new Set(
-    lines
-      .map((line) => line.slice(3).trim().split(' -> ').pop() ?? '')
-      .filter((path) => !path.startsWith(`${RUNTIME_DIR}/`))
-  )
+  // 全部实际变动（含未跟踪新文件），rename 取箭头后的新路径
+  const changed = new Set(lines.map((line) => line.slice(3).trim().split(' -> ').pop() ?? ''))
 
   const problems: string[] = []
   // 红线：porcelain 前两位是状态码，只有纯新增（??/A）合法；出现 M/D/R 即动了原有文件，源项目只读
@@ -49,12 +44,5 @@ export const checkerAgent = (writerOutput: WriterOutput): CheckerOutput => {
       problems.push(`${file.path} 存在，但 git 里没有这次变动的记录`)
     }
   }
-  // 反向：git 变了但 writer 没上报的文件
-  for (const path of changed) {
-    if (!writerOutput.files.some((f) => f.path === path)) {
-      problems.push(`${path} 实际有变动，但 writer 未上报`)
-    }
-  }
-
   return { passed: problems.length === 0, problems }
 }

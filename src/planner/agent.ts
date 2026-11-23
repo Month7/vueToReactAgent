@@ -1,6 +1,6 @@
 import { accessTokenFromEnv, query } from '@qoder-ai/qoder-agent-sdk';
 import { prompt } from './prompt';
-import { log } from '../log';
+import { log, debugLog } from '../log';
 import type { AgentChunk } from '../utils/stream';
 
 // 规划型 agent：读工作目录拆任务（事件直播），收尾 yield 计划 JSON 原文；只读不写
@@ -14,7 +14,7 @@ export const plannerAgent = async function* (userInput: string): AsyncGenerator<
     },
   })
   for await (const msg of stream) {
-    log('planner', { type: msg.type });
+    debugLog('planner', { type: msg.type });
     if (msg.type === 'assistant') {
       // 过程直播：这一轮模型要调的工具，一个 tool_use 一行
       for (const block of msg.message.content) {

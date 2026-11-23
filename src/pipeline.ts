@@ -4,7 +4,7 @@ import { checkerAgent } from './checker';
 import { reviewerAgent, reviewerOutputSchema, issueLines } from './reviewer';
 import { relayAgent } from './utils/stream';
 import { parseAgentOutput } from './utils/parse';
-import { MAX_RETRY_COUNT } from './constant';
+import { CHANGES_DIR, MAX_RETRY_COUNT } from './constant';
 import { plannerAgent, plannerOutputSchema } from './planner';
 import { saveTasks, loadOpenTasks, snapshotTasks, restoreTasks } from './utils/tasks';
 import { isGitRepo } from './utils/git';
@@ -22,40 +22,51 @@ export const runPipeline = async function* (userInput: string) {
     return;
   }
 
-  // 跨会话记忆：磁盘上有未勾完的任务就续做（断点恢复），没有才跑 planner 出新计划落盘
-  let tasks = loadOpenTasks();
-  if (tasks.length === 0) {
+  // 跨会话记忆（按变更分目录）：有未完成的变更就续做最近那个，没有才跑 planner 落盘一个新变更
+  let changeName = '';
+  let tasks: string[] = [];
+  const open = loadOpenTasks();
+  if (open) {
+    // 显式标志：让"复用了上次进度"直接说出口（变更名 + 剩余项数）
+    log('记忆恢复', open);
+    changeName = open.name;
+    if (open.input) {
+      // 续做轮的需求用 proposal 存档的原始输入，不依赖重启后用户敲的那句话
+      userInput = open.input;
+    }
+    tasks = open.tasks;
+    yield `检测到未完成的变更 ${open.name}（剩 ${open.tasks.length} 项），跳过 planner，断点续做\n`;
+  } else {
     const planText = yield* relayAgent(plannerAgent(userInput));
     const plan = parseAgentOutput(plannerOutputSchema, planText, 'planner');
     log('plannerResult', plan);
     if (plan.success) {
-      saveTasks(plan.data);
-      tasks = plan.data.tasks.map((t) => t.description);
+      const change = saveTasks(plan.data, userInput);
+      changeName = change.name;
+      tasks = change.tasks;
     }
-  } else {
-    // 显式标志：让"复用了上次进度"直接说出口，日志与 TUI 一眼可辨（否则只能靠 planner 打点缺席反推）
-    log('记忆恢复', tasks);
-    yield `检测到 ${tasks.length} 项未完成任务，跳过 planner，断点续做\n`;
   }
   if (tasks.length > 0) {
     yield '任务清单：\n' + tasks.map((t) => `  - [ ] ${t}\n`).join('');
   }
-  // 进循环前快照勾选状态：writer 的勾只是自评，闸门失败就恢复，烧穿后留在磁盘的才是真实进度
-  const tasksSnapshot = snapshotTasks();
+  // 进循环前快照当前变更的勾选状态：writer 的勾只是自评，闸门失败就恢复，烧穿后留在磁盘的才是真实进度
+  const tasksSnapshot = snapshotTasks(changeName);
 
   while (true) {
     if (retries > MAX_RETRY_COUNT) {
+      log('烧穿', { retries });
       yield '重试预算已用完，放弃。\n';
       break;
     }
 
-    // 第一道闸：writer 干活（事件直播），交付文本过形状校验
-    const text = yield* relayAgent(writerAgent(userInput, feedback, tasks));
+    // 第一道闸：writer 干活（事件直播），交付文本过形状校验；tasksPath 是当前变更的打勾目标
+    const text = yield* relayAgent(writerAgent(userInput, feedback, tasks, `${CHANGES_DIR}/${changeName}/tasks.md`));
     const writerResult = parseAgentOutput(writerOutputSchema, text, 'writer');
     log('writerResult', writerResult);
     if (!writerResult.success) {
+      log('回炉', { 闸门: 'writer schema', retries });
       yield '校验失败，重试中...\n';
-      restoreTasks(tasksSnapshot);
+      restoreTasks(changeName, tasksSnapshot);
       retries += 1;
       continue;
     }
@@ -64,10 +75,11 @@ export const runPipeline = async function* (userInput: string) {
     const report = checkerAgent(writerResult.data);
     log('checkerResult', report);
     if (!report.passed) {
+      log('回炉', { 闸门: 'checker', retries });
       yield '落盘核对发现问题：\n' + report.problems.map((p) => `  - ${p}\n`).join('');
       yield '回炉重修...\n';
       feedback = report.problems.join('\n');
-      restoreTasks(tasksSnapshot);
+      restoreTasks(changeName, tasksSnapshot);
       retries += 1;
       continue;
     }
@@ -89,8 +101,9 @@ export const runPipeline = async function* (userInput: string) {
       problems = [reviewText];
     }
     yield '回炉重修...\n';
+    log('回炉', { 闸门: 'reviewer', retries });
     feedback = problems.join('\n');
-    restoreTasks(tasksSnapshot);
+    restoreTasks(changeName, tasksSnapshot);
     retries += 1;
   }
 }

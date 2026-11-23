@@ -11,6 +11,11 @@ export const MAX_RETRY_COUNT = 3;
 export const RUNTIME_DIR = '.vue2react';
 
 /**
+ * 跨会话记忆按变更分目录（OpenSpec 形态）：changes/<变更名>/proposal.md + tasks.md，新计划不覆盖旧变更
+ */
+export const CHANGES_DIR = `${RUNTIME_DIR}/changes`;
+
+/**
  * 内置 skill 的 plugin 目录：跟模块定位而非 cwd（writer 的 cwd 在目标项目，plugin 在本仓库）
  */
 export const PLUGIN_PATH = fileURLToPath(new URL('../plugin', import.meta.url));
