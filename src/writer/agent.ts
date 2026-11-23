@@ -4,13 +4,14 @@ import { log } from '../log';
 import type { AgentChunk } from '../utils/stream';
 
 // 执行型 agent，但对外直播过程：每个工具调用 yield 一条事件，收尾 yield 交付原文
-export const writerAgent = async function* (userInput: string, feedback = ''): AsyncGenerator<AgentChunk> {
+export const writerAgent = async function* (userInput: string, feedback = '', tasks: string[] = []): AsyncGenerator<AgentChunk> {
   const stream = query({
-    prompt: prompt(userInput, feedback),
+    prompt: prompt(userInput, feedback, tasks),
     options: {
       auth: accessTokenFromEnv(),
       tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit'],
       permissionMode: 'acceptEdits',
+      skills: []
     },
   })
   for await (const msg of stream) {

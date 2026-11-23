@@ -1,5 +1,11 @@
-// feedback 非空 = 回炉轮：上轮交付被 checker 逮出的问题清单，要求只修问题不动其余
-export const prompt = (userInput: string, feedback = '') => {
+import { RUNTIME_DIR } from '../constant'
+
+// tasks 非空 = 带着计划干活：清单来自 planner（首轮）或磁盘上未勾完的项（续做）；feedback 非空 = 回炉轮
+export const prompt = (userInput: string, feedback = '', tasks: string[] = []) => {
+  let tasksBlock = ''
+  if (tasks.length > 0) {
+    tasksBlock = `\n\n本次任务清单（完成一项后用 Edit 把 ${RUNTIME_DIR}/tasks.md 里对应项的 [ ] 改成 [x]）：\n${tasks.map((t) => `- ${t}`).join('\n')}`
+  }
   let retryBlock = ''
   if (feedback) {
     retryBlock = `\n\n上一轮交付被检查出以下问题，请修复它们（符合要求的部分不要动）：\n${feedback}`
@@ -21,5 +27,5 @@ export const prompt = (userInput: string, feedback = '') => {
 
 files 必须覆盖这次动过的每一个文件，每个文件一条记录。
 
-本次用户需求：${userInput}${retryBlock}`
+本次用户需求：${userInput}${tasksBlock}${retryBlock}`
 }

@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/cli.tsx",
+    "dev": "start powershell -NoExit -Command \"Get-Content .vue2react/debug.log -Wait\" & tsx src/cli.tsx",
     "typecheck": "tsc --noEmit",
-    "log": "Get-Content debug.log -Wait"
+    "log": "Get-Content .vue2react/debug.log -Wait"
   },
   "dependencies": {
     "@qoder-ai/qoder-agent-sdk": "^1.0.60",

@@ -1,7 +1,7 @@
+import React from 'react'
 import { Box, Text } from 'ink'
 import TextInput from 'ink-text-input'
 import { useState } from 'react'
-import { loopAgent } from './agent'
 import { runPipeline } from './pipeline'
 // 界面消息，纯展示用；不参与发给 agent 的上下文
 interface Message {
