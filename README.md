@@ -1,6 +1,6 @@
 # AgentManual
 
-一个多 Agent 编排练手项目：CLI 里输入需求，流水线上的四个 Agent 协作把 Vue 组件库**单向迁移**为新的 React 组件库。
+CLI 里输入需求，流水线上的四个 Agent 协作把 Vue 组件库**单向迁移**为新的 React 组件库。
 
 技术栈：TypeScript + ink（终端 UI）+ @qoder-ai/qoder-agent-sdk。
 
