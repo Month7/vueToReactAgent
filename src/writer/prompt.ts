@@ -30,6 +30,13 @@ export const prompt = (userInput: string, tasks: string[] = [], tasksPath = '') 
 
 files 必须覆盖这次动过的每一个文件，每个文件一条记录。
 
+交付分三种情况：
+1. 全部任务完成：输出上面的正常 JSON
+2. 只能完成一部分（典型：某依赖的用法在技能清单与公网都查不到）：不要硬写猜测代码——files 如实列已完成部分，另加 blockedReason 说明卡点：{ "summary": "已完成部分概述", "files": [...], "blockedReason": "echarts 4.x 与 React 18 的受控更新写法查不到依据" }
+3. 一项都没能开始：files 给空数组，加 blockedReason 说明原因
+blockedReason 必须是信息缺失（查不到 X）；"不确定怎么做"不算，那属于正常交付后由审查回炉。
+任务清单只勾真正完成的项。
+
 本次用户需求：${userInput}${tasksBlock}${memoryBlock}`
 }
 

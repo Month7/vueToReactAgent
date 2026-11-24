@@ -139,7 +139,7 @@ export const runPipeline = async function* (userInput: string, ask: AskFn = auto
         continue;
       }
 
-      // 第二道闸：checker 拿 git/磁盘核对落盘事实
+      // 第二道闸：checker 拿 git/磁盘核对落盘事实（中止交付照核已产出部分；未交付 files 空只跑红线）
       const report = checkerAgent(writerResult.data);
       log('checkerResult', report);
       if (!report.passed) {
@@ -152,33 +152,55 @@ export const runPipeline = async function* (userInput: string, ask: AskFn = auto
         continue;
       }
 
-      // 第三道闸：reviewer 对照 Vue 源与 React 产物审语义
-      const reviewText = yield* relayAgent(reviewerAgent(userInput, writerResult.data));
-      const review = parseAgentOutput(reviewerOutputSchema, reviewText, 'reviewer');
-      log('reviewerResult', review);
-      if (review.success && review.data.verdict === 'pass') {
-        // 本轮通过 = 此前 reviewer 挑过的问题已修好，记忆入库
-        saveMemory(pendingMemory, '已修复');
-        yield `校验通过：${writerResult.data.summary}\n`;
-        // 终局顺带跑晋升闸：素材够阈值时会提议提炼进 Skill
-        yield* promote(ask);
-        return;
+      // 第三道闸：reviewer 审语义；中止交付的已产出部分照审（当场验收），未交付（files 空）没有审查对象视同通过
+      const hasOutput = writerResult.data.files.length > 0;
+      if (hasOutput) {
+        const reviewText = yield* relayAgent(reviewerAgent(userInput, writerResult.data));
+        const review = parseAgentOutput(reviewerOutputSchema, reviewText, 'reviewer');
+        log('reviewerResult', review);
+        if (!(review.success && review.data.verdict === 'pass')) {
+          let problems: string[] = [];
+          if (review.success) {
+            problems = issueLines(review.data.issues);
+            // 语义问题入记忆暂存（schema 失败不是语义问题，不记）
+            pendingMemory.push(...problems);
+            yield '语义审查发现问题：\n' + problems.map((p) => `  - ${p}\n`).join('');
+          } else {
+            yield '审查输出不合 schema，回炉...\n';
+            problems = [reviewText];
+          }
+          yield '回炉重修...\n';
+          log('回炉', { 闸门: 'reviewer', retries });
+          restoreTasks(changeName, tasksSnapshot);
+          round = () => writer.refine(problems.join('\n'));
+          retries += 1;
+          continue;
+        }
       }
-      let problems: string[] = [];
-      if (review.success) {
-        problems = issueLines(review.data.issues);
-        // 语义问题入记忆暂存（schema 失败不是语义问题，不记）
-        pendingMemory.push(...problems);
-        yield '语义审查发现问题：\n' + problems.map((p) => `  - ${p}\n`).join('');
-      } else {
-        yield '审查输出不合 schema，回炉...\n';
-        problems = [reviewText];
+
+      // 审查通过合流：中止交付（部分/未交付）在此进弃权终局——已产出部分刚过了 checker+reviewer，勾有背书可保留
+      if ('blockedReason' in writerResult.data) {
+        const reason = writerResult.data.blockedReason
+        log('弃权', { reason, retries });
+        yield `writer 弃权：${reason}\n`
+        const choice = await ask(`卡住了：${reason}\n直接输入补充资料（库文档/用法）继续，或选择放弃。`, ['放弃'])
+        if (choice === '放弃' || choice.trim() === '') {
+          yield `变更 ${changeName} 迁移失败：${reason}\n已验收通过的产出保留在磁盘，可人工接手；确认依赖用法后可追加进 SKILL.md 再重跑续做。\n`
+          yield* promote(ask);
+          return;
+        }
+        // 信息缺失不算回炉预算：不 consume retries，凭资料接着干
+        yield '凭补充资料继续...\n'
+        round = () => writer.refine(`用户补充的资料，凭它继续完成迁移：\n${choice}`)
+        continue;
       }
-      yield '回炉重修...\n';
-      log('回炉', { 闸门: 'reviewer', retries });
-      restoreTasks(changeName, tasksSnapshot);
-      round = () => writer.refine(problems.join('\n'));
-      retries += 1;
+
+      // 本轮通过 = 此前 reviewer 挑过的问题已修好，记忆入库
+      saveMemory(pendingMemory, '已修复');
+      yield `校验通过：${writerResult.data.summary}\n`;
+      // 终局顺带跑晋升闸：素材够阈值时会提议提炼进 Skill
+      yield* promote(ask);
+      return;
     }
   } finally {
     await writer.close();
