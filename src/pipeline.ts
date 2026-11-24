@@ -12,7 +12,13 @@ import { saveMemory } from './utils/memory';
 import { isGitRepo } from './utils/git';
 
 // 编排层：只管流程——闸门顺序、失败回喂、重试上限；收流/解析在 utils，格式化在各 agent 模块
-export const runPipeline = async function* (userInput: string) {
+// 宿主 ask 通道：编排层决策（计划确认/记忆晋升等）向用户提问，返回选项文本或用户自由输入
+export type AskFn = (question: string, options: string[]) => Promise<string>
+
+// 不传 ask（如 headless 跑）时自动选第一项，管线照跑不阻塞
+const autoFirst: AskFn = (_question, options) => Promise.resolve(options[0] ?? '')
+
+export const runPipeline = async function* (userInput: string, ask: AskFn = autoFirst) {
   // 回炉预算：writer 带问题清单重做的次数，成功不消耗；闸门验新货不算重试
   let retries = 1;
 
@@ -36,18 +42,29 @@ export const runPipeline = async function* (userInput: string) {
     }
     tasks = open.tasks;
     yield `检测到未完成的变更 ${open.name}（剩 ${open.tasks.length} 项），跳过 planner，断点续做\n`;
+    yield '剩余任务：\n' + open.tasks.map((t) => `  - [ ] ${t}\n`).join('');
   } else {
-    const planText = yield* relayAgent(plannerAgent(userInput));
-    const plan = parseAgentOutput(plannerOutputSchema, planText, 'planner');
-    log('plannerResult', plan);
-    if (plan.success) {
-      const change = saveTasks(plan.data, userInput);
-      changeName = change.name;
-      tasks = change.tasks;
+    // 计划确认：先给用户过目再落盘——采纳进循环；放弃整轮终止；输入任意文本 = 补充要求，带意见重新规划
+    while (true) {
+      const planText = yield* relayAgent(plannerAgent(userInput));
+      const plan = parseAgentOutput(plannerOutputSchema, planText, 'planner');
+      log('plannerResult', plan);
+      if (!plan.success) { break; }
+      yield '拟定计划：\n' + plan.data.tasks.map((t) => `  - ${t.description}\n`).join('');
+      const choice = await ask('是否采纳该迁移计划？', ['采纳', '修改', '放弃']);
+      if (choice === '采纳') {
+        const change = saveTasks(plan.data, userInput);
+        changeName = change.name;
+        tasks = change.tasks;
+        break;
+      }
+      if (choice === '放弃') {
+        yield '已放弃本次规划。\n';
+        return;
+      }
+      userInput = `${userInput}\n补充要求：${choice}`;
+      yield '按补充要求重新规划...\n';
     }
-  }
-  if (tasks.length > 0) {
-    yield '任务清单：\n' + tasks.map((t) => `  - [ ] ${t}\n`).join('');
   }
   // 进循环前快照当前变更的勾选状态：writer 的勾只是自评，闸门失败就恢复，烧穿后留在磁盘的才是真实进度
   const tasksSnapshot = snapshotTasks(changeName);

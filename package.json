@@ -1,4 +1,4 @@
- {
+{
   "name": "agent-manual",
   "private": true,
   "type": "module",
@@ -8,6 +8,7 @@
     "log": "Get-Content .vue2react/debug.log -Wait"
   },
   "dependencies": {
+    "@inkjs/ui": "^2.0.0",
     "@qoder-ai/qoder-agent-sdk": "^1.0.60",
     "ink": "^5.0.1",
     "ink-text-input": "^6.0.0",

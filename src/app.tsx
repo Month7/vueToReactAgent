@@ -2,11 +2,18 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import TextInput from 'ink-text-input'
 import { useState } from 'react'
-import { runPipeline } from './pipeline'
+import { runPipeline, type AskFn } from './pipeline'
+import { QuestionCard } from './ui/QuestionCard'
 // 界面消息，纯展示用；不参与发给 agent 的上下文
 interface Message {
   role: 'user' | 'assistant'
   content: string
+}
+// 挂起中的问题：宿主 ask 与将来的 SDK canUseTool 都往这里塞，UI 不关心谁问的
+interface PendingQuestion {
+  question: string
+  options: string[]
+  resolve: (answer: string) => void
 }
 
 export default function App() {
@@ -16,6 +23,13 @@ export default function App() {
   const [input, setInput] = useState('')
   // 是否有 agent 调用在进行中；用于上锁，防止并发调用
   const [busy, setBusy] = useState(false)
+  // 等用户回答的确认卡片：非空时渲染 QuestionCard，pipeline 挂在 ask 的 Promise 上
+  const [pending, setPending] = useState<PendingQuestion | null>(null)
+
+  // 宿主 ask 通道：把问题挂到界面上，答案 resolve 回 pipeline（generator 里 await 这个 Promise 是合法挂起，TUI 渲染不受影响）
+  const ask: AskFn = (question, options) => new Promise<string>((resolve) => {
+    setPending({ question, options, resolve })
+  })
 
   // 把流式输出的一个 chunk 拼到最后一条 assistant 消息上（改写而非新增）
   const append = (chunk: string) => {
@@ -38,7 +52,7 @@ export default function App() {
     setBusy(true)
     try {
       // pipeline 是 async generator：过程（工具调用）与结果边跑边吐，逐块追加形成实时画面
-      for await (const chunk of runPipeline(message)) {
+      for await (const chunk of runPipeline(message, ask)) {
         append(chunk)
       }
     } catch (err) {
@@ -47,6 +61,14 @@ export default function App() {
     } finally {
       setBusy(false)
     }
+  }
+
+  // 提交答案：问答定格进当前 assistant 气泡，resolve 唤醒 pipeline，收卡片
+  const answerQuestion = (answer: string) => {
+    if (!pending) return
+    append(`\n${pending.question} → ${answer}\n`)
+    pending.resolve(answer)
+    setPending(null)
   }
 
   return (
@@ -58,10 +80,14 @@ export default function App() {
           <Text>{m.content || '…'}</Text>
         </Box>
       ))}
-      {/* 输入区：busy 时显示等待提示并取消焦点 */}
+      {/* 确认卡片：pipeline 在 await ask 时挂在这里等答案，答完定格进聊天流 */}
+      {busy && pending && (
+        <QuestionCard question={pending.question} options={pending.options} onSubmit={answerQuestion} />
+      )}
+      {/* 输入区：busy 时显示等待提示并取消焦点；有确认卡片在等答案时也不能输入 */}
       <Box>
         <Text color="cyan">{busy ? '… ' : '> '}</Text>
-        <TextInput value={input} onChange={setInput} onSubmit={(value) => void send(value)} focus={!busy} />
+        <TextInput value={input} onChange={setInput} onSubmit={(value) => void send(value)} focus={!busy && !pending} />
       </Box>
     </Box>
   )
