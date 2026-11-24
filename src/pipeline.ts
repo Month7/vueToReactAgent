@@ -5,11 +5,14 @@ import { reviewerAgent, reviewerOutputSchema, issueLines } from './reviewer';
 import { relayAgent } from './utils/stream';
 import type { AgentChunk } from './utils/stream';
 import { parseAgentOutput } from './utils/parse';
-import { CHANGES_DIR, MAX_RETRY_COUNT } from './constant';
+import { CHANGES_DIR, MAX_RETRY_COUNT, PROMOTE_THRESHOLD, SKILL_FILE } from './constant';
 import { plannerAgent, plannerOutputSchema } from './planner';
+import { promoterAgent, promoterOutputSchema } from './promoter';
 import { saveTasks, loadOpenTasks, snapshotTasks, restoreTasks } from './utils/tasks';
-import { saveMemory } from './utils/memory';
+import { saveMemory, loadMemory, consumeMemory } from './utils/memory';
+import { appendSkillRule } from './utils/skill';
 import { isGitRepo } from './utils/git';
+import { readFileSync } from 'node:fs';
 
 // 编排层：只管流程——闸门顺序、失败回喂、重试上限；收流/解析在 utils，格式化在各 agent 模块
 // 宿主 ask 通道：编排层决策（计划确认/记忆晋升等）向用户提问，返回选项文本或用户自由输入
@@ -17,6 +20,39 @@ export type AskFn = (question: string, options: string[]) => Promise<string>
 
 // 不传 ask（如 headless 跑）时自动选第一项，管线照跑不阻塞
 const autoFirst: AskFn = (_question, options) => Promise.resolve(options[0] ?? '')
+
+// 记忆晋升闸：素材够阈值时提议提炼——模型出规则草案，人逐条审，
+// 采纳的 append 进 SKILL.md（PLUGIN_PATH 指的那份）并让对应素材从 memory.md 毕业
+async function* promote(ask: AskFn): AsyncGenerator<string> {
+  const lines = loadMemory(100)
+  if (lines.length < PROMOTE_THRESHOLD) { return }
+  const choice = await ask(`记忆素材已攒 ${lines.length} 条，提炼进 Skill？`, ['采纳', '放弃'])
+  if (choice !== '采纳') { return }
+  yield '提炼中...\n'
+  const material = lines.map((line, i) => `${i + 1}. ${line}`).join('\n')
+  const skillText = readFileSync(SKILL_FILE, 'utf8')
+  const draftText = yield* relayAgent(promoterAgent(material, skillText))
+  const draft = parseAgentOutput(promoterOutputSchema, draftText, 'promoter')
+  log('promoterResult', draft)
+  if (!draft.success) {
+    yield '提炼输出不合格，跳过晋升。\n'
+    return
+  }
+  const consumed: number[] = []
+  for (const rule of draft.data.rules) {
+    yield `候选规则：${rule.text}\n`
+    const take = await ask('采纳这条规则？', ['采纳', '拒绝'])
+    if (take === '采纳') {
+      appendSkillRule(rule.text)
+      consumed.push(...rule.evidence)
+      yield '已写入 SKILL.md\n'
+    }
+  }
+  consumeMemory(consumed)
+  if (consumed.length > 0) {
+    yield `对应素材已毕业（删 ${consumed.length} 行）。\n`
+  }
+}
 
 export const runPipeline = async function* (userInput: string, ask: AskFn = autoFirst) {
   // 回炉预算：writer 带问题清单重做的次数，成功不消耗；闸门验新货不算重试
@@ -85,6 +121,8 @@ export const runPipeline = async function* (userInput: string, ask: AskFn = auto
         // 烧穿 = 修到放弃的问题，最该记的顽固陷阱
         saveMemory(pendingMemory, '烧穿');
         yield '重试预算已用完，放弃。\n';
+        // 终局顺带跑晋升闸：烧穿攒的顽固陷阱正是提炼的好素材
+        yield* promote(ask);
         break;
       }
 
@@ -122,6 +160,8 @@ export const runPipeline = async function* (userInput: string, ask: AskFn = auto
         // 本轮通过 = 此前 reviewer 挑过的问题已修好，记忆入库
         saveMemory(pendingMemory, '已修复');
         yield `校验通过：${writerResult.data.summary}\n`;
+        // 终局顺带跑晋升闸：素材够阈值时会提议提炼进 Skill
+        yield* promote(ask);
         return;
       }
       let problems: string[] = [];

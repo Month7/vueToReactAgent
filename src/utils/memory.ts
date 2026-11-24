@@ -22,3 +22,11 @@ export const loadMemory = (n = 20): string[] => {
   if (!existsSync(MEMORY_PATH)) { return [] }
   return readFileSync(MEMORY_PATH, 'utf8').split('\n').filter(Boolean).slice(-n)
 }
+
+// 晋升毕业：删掉已提炼成 SKILL.md 规则的素材行（行号对应 loadMemory 全量列表的 1 起索引）
+export const consumeMemory = (lineNumbers: number[]) => {
+  if (lineNumbers.length === 0 || !existsSync(MEMORY_PATH)) { return }
+  const lines = readFileSync(MEMORY_PATH, 'utf8').split('\n').filter(Boolean)
+  const kept = lines.filter((_line, i) => !lineNumbers.includes(i + 1))
+  writeFileSync(MEMORY_PATH, kept.join('\n') + '\n')
+}

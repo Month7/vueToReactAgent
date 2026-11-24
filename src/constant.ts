@@ -24,3 +24,13 @@ export const PLUGIN_PATH = fileURLToPath(new URL('../plugin', import.meta.url));
  * 插件限定名 plugin:skill：SDK 把它编译成 Skill(...) 并入工具白名单，模型按 description 按需调用
  */
 export const PLUGIN_SKILL = 'vue2react:vue-to-react-translation-guide';
+
+/**
+ * 记忆晋升阈值：memory.md 素材条数达到后，变更终局时提议提炼进 Skill
+ */
+export const PROMOTE_THRESHOLD = 8;
+
+/**
+ * 内置 SKILL.md 文件路径：晋升的规则 append 到这里（将来分发时 PLUGIN_PATH 改为用户副本优先，此处零改动）
+ */
+export const SKILL_FILE = `${PLUGIN_PATH}/skills/vue-to-react-translation-guide/SKILL.md`;
