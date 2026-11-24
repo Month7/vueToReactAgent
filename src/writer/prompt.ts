@@ -1,9 +1,17 @@
-// 首轮消息：角色设定+规则+任务清单；tasksPath 是当前变更的 tasks.md（打勾目标），由 pipeline 传入
+// 首轮消息：角色设定+规则+任务清单+历史记忆；tasksPath 是当前变更的 tasks.md（打勾目标），由 pipeline 传入
 // 回炉消息是另一条（feedbackMessage）：流式会话里追加的用户消息，不拼在这里
+import { loadMemory } from '../utils/memory';
+
 export const prompt = (userInput: string, tasks: string[] = [], tasksPath = '') => {
   let tasksBlock = ''
   if (tasks.length > 0) {
     tasksBlock = `\n\n本次任务清单（完成一项后用 Edit 把 ${tasksPath} 里对应项的 [ ] 改成 [x]）：\n${tasks.map((t) => `- ${t}`).join('\n')}`
+  }
+  // 历史记忆（reviewer 语义问题素材库）：只在首轮注入——回炉轮靠会话内记忆，不重复塞
+  let memoryBlock = ''
+  const memory = loadMemory()
+  if (memory.length > 0) {
+    memoryBlock = `\n\n历史记忆（此前迁移踩过的坑，同类问题不要重犯）：\n${memory.join('\n')}`
   }
   return `你是代码迁移工程师，负责把 Vue 组件库迁移为一个新的 React + TypeScript 组件库。
 
@@ -22,7 +30,7 @@ export const prompt = (userInput: string, tasks: string[] = [], tasksPath = '') 
 
 files 必须覆盖这次动过的每一个文件，每个文件一条记录。
 
-本次用户需求：${userInput}${tasksBlock}`
+本次用户需求：${userInput}${tasksBlock}${memoryBlock}`
 }
 
 // 回炉消息：同一会话里追加的一条用户消息——writer 记得自己上轮做了什么，只需告诉它哪里不合格

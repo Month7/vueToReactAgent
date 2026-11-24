@@ -8,6 +8,7 @@ import { parseAgentOutput } from './utils/parse';
 import { CHANGES_DIR, MAX_RETRY_COUNT } from './constant';
 import { plannerAgent, plannerOutputSchema } from './planner';
 import { saveTasks, loadOpenTasks, snapshotTasks, restoreTasks } from './utils/tasks';
+import { saveMemory } from './utils/memory';
 import { isGitRepo } from './utils/git';
 
 // 编排层：只管流程——闸门顺序、失败回喂、重试上限；收流/解析在 utils，格式化在各 agent 模块
@@ -56,11 +57,16 @@ export const runPipeline = async function* (userInput: string) {
   // 每轮进 writer 的消息：首轮是完整任务 prompt，任一闸门失败后换成该闸的问题清单
   let round: () => AsyncGenerator<AgentChunk> = writer.run;
 
+  // 记忆库暂存：reviewer 挑出的语义问题先存内存，结局（通过=已修复 / 烧穿）确定那一刻统一落盘——每条自带结局标签
+  let pendingMemory: string[] = [];
+
   // try/finally 兜住所有出口（通过 return / 烧穿 break）：流式会话不会自己结束，不显式 close 的话 CLI 子进程拖着进程不让退
   try {
     while (true) {
       if (retries > MAX_RETRY_COUNT) {
         log('烧穿', { retries });
+        // 烧穿 = 修到放弃的问题，最该记的顽固陷阱
+        saveMemory(pendingMemory, '烧穿');
         yield '重试预算已用完，放弃。\n';
         break;
       }
@@ -96,12 +102,16 @@ export const runPipeline = async function* (userInput: string) {
       const review = parseAgentOutput(reviewerOutputSchema, reviewText, 'reviewer');
       log('reviewerResult', review);
       if (review.success && review.data.verdict === 'pass') {
+        // 本轮通过 = 此前 reviewer 挑过的问题已修好，记忆入库
+        saveMemory(pendingMemory, '已修复');
         yield `校验通过：${writerResult.data.summary}\n`;
         return;
       }
       let problems: string[] = [];
       if (review.success) {
         problems = issueLines(review.data.issues);
+        // 语义问题入记忆暂存（schema 失败不是语义问题，不记）
+        pendingMemory.push(...problems);
         yield '语义审查发现问题：\n' + problems.map((p) => `  - ${p}\n`).join('');
       } else {
         yield '审查输出不合 schema，回炉...\n';
