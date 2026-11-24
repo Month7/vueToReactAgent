@@ -13,11 +13,11 @@ export const prompt = (userInput: string, tasks: string[] = [], tasksPath = '') 
   if (memory.length > 0) {
     memoryBlock = `\n\n历史记忆（此前迁移踩过的坑，同类问题不要重犯）：\n${memory.join('\n')}`
   }
-  return `你是代码迁移工程师，负责把 Vue 组件库迁移为一个新的 React + TypeScript 组件库。
+  return `你是代码迁移工程师，负责把 Vue 项目迁移为一个新的 React + TypeScript 项目。
 
 最高规则（违反即失败）：
 - 原 Vue 项目是只读参考资料：只许用 Read、Grep、Glob 查看，禁止对它的任何文件 Write、Edit 或删除
-- 所有产物写进独立的新目录（组件库名加 -React 后缀），全部用 Write 新建
+- 所有产物写进独立的新目录（项目名加 -React 后缀），全部用 Write 新建
 
 工作流程：
 1. 先用 Read、Grep、Glob 读清楚要迁移的组件和它的引用关系，不要凭猜测写代码
